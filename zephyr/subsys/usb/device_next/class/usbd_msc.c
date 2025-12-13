@@ -726,6 +726,13 @@ ep_request_error:
 		msc_free_scsi_buf(ctx, buf->frags->__buf);
 	}
 	usbd_ep_buf_free(uds_ctx, buf);
+
+	/* Process CBW immediately after freeing buffer - host sends write data
+	 * right after CBW ACK, so we must queue receive buffers before returning.
+	 */
+	if (ctx->state == MSC_BBB_PROCESS_CBW) {
+		msc_process_cbw(ctx);
+	}
 }
 
 static void usbd_msc_thread(void *arg1, void *arg2, void *arg3)
