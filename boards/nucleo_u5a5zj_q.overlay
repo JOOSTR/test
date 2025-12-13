@@ -20,6 +20,7 @@
     pinctrl-names = "default";
     disk-name = "SD";
     bus-width = <4>;
+    idma;
 };
 
 &usbotg_hs {
