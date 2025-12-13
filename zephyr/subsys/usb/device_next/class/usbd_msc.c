@@ -526,6 +526,10 @@ static void msc_process_cbw(struct msc_bot_ctx *ctx)
 		} else {
 			/* Case (11) Ho > Do or (12) Ho = Do */
 			ctx->state = MSC_BBB_PROCESS_WRITE;
+			/* Queue buffers immediately - host starts sending
+			 * data right after CBW ACK, so we must be ready.
+			 */
+			msc_queue_write(ctx);
 		}
 	}
 }
