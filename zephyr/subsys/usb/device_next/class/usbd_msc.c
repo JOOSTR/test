@@ -611,6 +611,10 @@ static void msc_handle_bulk_out(struct msc_bot_ctx *ctx,
 		}
 	} else if (ctx->state == MSC_BBB_PROCESS_WRITE) {
 		msc_process_write(ctx, buf, len);
+		/* Queue next buffer immediately - host sends data continuously */
+		if (ctx->state == MSC_BBB_PROCESS_WRITE) {
+			msc_queue_write(ctx);
+		}
 	}
 }
 
