@@ -1,0 +1,61 @@
+cmake:
+  application:
+    configuration-dir: 'C:/dev/stm32'
+    source-dir: 'C:/dev/stm32'
+  board:
+    name: 'nucleo_u5a5zj_q'
+    path:
+     - 'C:/dev/stm32/zephyr/boards/st/nucleo_u5a5zj_q'
+    qualifiers: 'stm32u5a5xx'
+    revision: ''
+  devicetree:
+    bindings-dirs:
+     - 'C:/dev/stm32/zephyr/dts/bindings'
+    files:
+     - 'C:/dev/stm32/zephyr/boards/st/nucleo_u5a5zj_q/nucleo_u5a5zj_q.dts'
+     - 'C:/dev/stm32/boards/nucleo_u5a5zj_q.overlay'
+    include-dirs:
+     - 'C:/dev/stm32/modules/hal/ambiq/dts'
+     - 'C:/dev/stm32/modules/hal/atmel/include'
+     - 'C:/dev/stm32/modules/hal/bouffalolab/include'
+     - 'C:/dev/stm32/modules/hal/bouffalolab/include/zephyr'
+     - 'C:/dev/stm32/modules/hal/gigadevice/include'
+     - 'C:/dev/stm32/modules/hal/microchip/include'
+     - 'C:/dev/stm32/modules/hal/microchip/dts'
+     - 'C:/dev/stm32/modules/hal/nuvoton/dts'
+     - 'C:/dev/stm32/modules/hal/nxp/dts'
+     - 'C:/dev/stm32/modules/hal/stm32/dts'
+     - 'C:/dev/stm32/modules/hal/ti/dts'
+     - 'C:/dev/stm32/zephyr/include'
+     - 'C:/dev/stm32/zephyr/include/zephyr'
+     - 'C:/dev/stm32/zephyr/dts/common'
+     - 'C:/dev/stm32/zephyr/dts/vendor'
+     - 'C:/dev/stm32/zephyr/dts/rx'
+     - 'C:/dev/stm32/zephyr/dts/x86'
+     - 'C:/dev/stm32/zephyr/dts/xtensa'
+     - 'C:/dev/stm32/zephyr/dts/sparc'
+     - 'C:/dev/stm32/zephyr/dts/riscv'
+     - 'C:/dev/stm32/zephyr/dts/posix'
+     - 'C:/dev/stm32/zephyr/dts/arm64'
+     - 'C:/dev/stm32/zephyr/dts/arm'
+     - 'C:/dev/stm32/zephyr/dts/arc'
+     - 'C:/dev/stm32/zephyr/dts'
+    user-files:
+     - 'C:/dev/stm32/boards/nucleo_u5a5zj_q.overlay'
+  kconfig:
+    files:
+     - 'C:/dev/stm32/zephyr/boards/st/nucleo_u5a5zj_q/nucleo_u5a5zj_q_defconfig'
+     - 'C:/dev/stm32/prj.conf'
+    user-files:
+     - 'C:/dev/stm32/prj.conf'
+  toolchain:
+    name: 'zephyr'
+    path: 'C:/dev/stm32/zephyr-sdk-0.17.4'
+  zephyr:
+    version: '4.3.99'
+    zephyr-base: 'C:/dev/stm32/zephyr'
+version: '0.1.0'
+west:
+  command: 'C:\Users\joost\AppData\Local\Programs\Python\Python310\Scripts\west build -b nucleo_u5a5zj_q --pristine'
+  topdir: 'C:\dev\stm32'
+  version: '1.5.0'
