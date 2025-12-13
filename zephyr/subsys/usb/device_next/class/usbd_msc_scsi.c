@@ -702,6 +702,8 @@ static size_t store_write_10(struct scsi_ctx *ctx, const uint8_t *buf, size_t le
 	initial_remaining = ctx->remaining_data;
 	sectors = MIN(length, ctx->remaining_data) / ctx->sector_size;
 
+	LOG_INF("store_write_10: lba=%u, length=%zu, sectors=%u", ctx->lba, length, sectors);
+
 	while (sectors > 0) {
 		chunk_sectors = MIN(sectors, sizeof(idma_bounce_buffer) / ctx->sector_size);
 
@@ -713,12 +715,14 @@ static size_t store_write_10(struct scsi_ctx *ctx, const uint8_t *buf, size_t le
 
 		int ret = disk_access_write(ctx->disk, idma_bounce_buffer, ctx->lba, chunk_sectors);
 		if (ret != 0) {
-			LOG_ERR("disk_access_write failed: %d", ret);
+			LOG_ERR("disk_access_write failed at lba %u: %d", ctx->lba, ret);
 			if (total_written == 0) {
 				return medium_error(ctx, WRITE_ERROR);
 			}
 			break;
 		}
+
+		LOG_INF("write OK: lba=%u, sectors=%u", ctx->lba, chunk_sectors);
 
 		buf += chunk_sectors * ctx->sector_size;
 		ctx->lba += chunk_sectors;
@@ -727,9 +731,10 @@ static size_t store_write_10(struct scsi_ctx *ctx, const uint8_t *buf, size_t le
 	}
 
 	/* Flush disk cache if this is the last sector in transfer */
-	if (initial_remaining - total_written == 0 || 
+	if (initial_remaining - total_written == 0 ||
 	    ctx->remaining_data - total_written == 0) {
 		disk_access_ioctl(ctx->disk, DISK_IOCTL_CTRL_SYNC, NULL);
+		LOG_INF("disk sync completed");
 	}
 
 	return total_written;
@@ -740,13 +745,17 @@ SCSI_CMD_HANDLER(WRITE_10)
 	uint32_t lba = sys_be32_to_cpu(cmd->lba);
 	uint16_t transfer_length = sys_be16_to_cpu(cmd->transfer_length);
 
+	LOG_INF("WRITE_10: lba=%u, len=%u sectors", lba, transfer_length);
+
 	ctx->cmd_is_data_write = true;
 
 	if (!ctx->medium_loaded || update_disk_info(ctx) != DISK_STATUS_OK) {
+		LOG_ERR("WRITE_10: medium not ready");
 		return not_ready(ctx, MEDIUM_NOT_PRESENT);
 	}
 
 	if (validate_transfer_length(ctx, lba, transfer_length)) {
+		LOG_ERR("WRITE_10: invalid LBA range");
 		return illegal_request(ctx, LOGICAL_BLOCK_ADDRESS_OUT_OF_RANGE);
 	}
 
