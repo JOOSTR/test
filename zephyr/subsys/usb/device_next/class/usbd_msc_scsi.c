@@ -294,7 +294,6 @@ extern uint8_t idma_bounce_buffer[4096];
 static int update_disk_info(struct scsi_ctx *const ctx)
 {
 	int status = disk_access_status(ctx->disk);
-	LOG_INF("disk_access_status returned: %d", status);
 
 	if (disk_access_ioctl(ctx->disk, DISK_IOCTL_GET_SECTOR_COUNT, &ctx->sector_count) != 0) {
 		LOG_ERR("GET_SECTOR_COUNT failed");
@@ -307,9 +306,6 @@ static int update_disk_info(struct scsi_ctx *const ctx)
 		ctx->sector_size = 0;
 		status = -EIO;
 	}
-
-	LOG_INF("sector_count=%u, sector_size=%u, buffer_size=%d", 
-	        ctx->sector_count, ctx->sector_size, CONFIG_USBD_MSC_SCSI_BUFFER_SIZE);
 
 	if (!ctx->sector_size) {
 		LOG_ERR("sector_size is 0");
@@ -325,7 +321,6 @@ static int update_disk_info(struct scsi_ctx *const ctx)
 		status = -ENOMEM;
 	}
 
-	LOG_INF("update_disk_info returning: %d", status);
 	return status;
 }
 
@@ -656,11 +651,6 @@ static size_t fill_read_10(struct scsi_ctx *ctx, uint8_t *buf, size_t length)
 
 		memcpy(buf, idma_bounce_buffer, chunk_sectors * ctx->sector_size);
 
-		if (ctx->lba == 0 && total_read == 0) {
-			LOG_INF("MBR: %02x %02x ... %02x %02x",
-				buf[0], buf[1], buf[510], buf[511]);
-		}
-
 		buf += chunk_sectors * ctx->sector_size;
 		ctx->lba += chunk_sectors;
 		sectors -= chunk_sectors;
@@ -702,8 +692,6 @@ static size_t store_write_10(struct scsi_ctx *ctx, const uint8_t *buf, size_t le
 	initial_remaining = ctx->remaining_data;
 	sectors = MIN(length, ctx->remaining_data) / ctx->sector_size;
 
-	LOG_INF("store_write_10: lba=%u, length=%zu, sectors=%u", ctx->lba, length, sectors);
-
 	while (sectors > 0) {
 		chunk_sectors = MIN(sectors, sizeof(idma_bounce_buffer) / ctx->sector_size);
 
@@ -722,8 +710,6 @@ static size_t store_write_10(struct scsi_ctx *ctx, const uint8_t *buf, size_t le
 			break;
 		}
 
-		LOG_INF("write OK: lba=%u, sectors=%u", ctx->lba, chunk_sectors);
-
 		buf += chunk_sectors * ctx->sector_size;
 		ctx->lba += chunk_sectors;
 		sectors -= chunk_sectors;
@@ -734,7 +720,6 @@ static size_t store_write_10(struct scsi_ctx *ctx, const uint8_t *buf, size_t le
 	if (initial_remaining - total_written == 0 ||
 	    ctx->remaining_data - total_written == 0) {
 		disk_access_ioctl(ctx->disk, DISK_IOCTL_CTRL_SYNC, NULL);
-		LOG_INF("disk sync completed");
 	}
 
 	return total_written;
@@ -745,17 +730,13 @@ SCSI_CMD_HANDLER(WRITE_10)
 	uint32_t lba = sys_be32_to_cpu(cmd->lba);
 	uint16_t transfer_length = sys_be16_to_cpu(cmd->transfer_length);
 
-	LOG_INF("WRITE_10: lba=%u, len=%u sectors", lba, transfer_length);
-
 	ctx->cmd_is_data_write = true;
 
 	if (!ctx->medium_loaded || update_disk_info(ctx) != DISK_STATUS_OK) {
-		LOG_ERR("WRITE_10: medium not ready");
 		return not_ready(ctx, MEDIUM_NOT_PRESENT);
 	}
 
 	if (validate_transfer_length(ctx, lba, transfer_length)) {
-		LOG_ERR("WRITE_10: invalid LBA range");
 		return illegal_request(ctx, LOGICAL_BLOCK_ADDRESS_OUT_OF_RANGE);
 	}
 
