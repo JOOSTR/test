@@ -53,10 +53,15 @@ USBD_DESC_MANUFACTURER_DEFINE(my_mfr, "Joost");
 USBD_DESC_PRODUCT_DEFINE(my_product, "SD Card");
 USBD_DESC_SERIAL_NUMBER_DEFINE(my_sn);
 
-USBD_CONFIGURATION_DEFINE(my_fs_config, USB_SCD_SELF_POWERED, 200, NULL);
-USBD_CONFIGURATION_DEFINE(my_hs_config, USB_SCD_SELF_POWERED, 200, NULL);
+/* Configuration string descriptors - required for proper enumeration */
+USBD_DESC_CONFIG_DEFINE(my_fs_cfg_desc, "FS Configuration");
+USBD_DESC_CONFIG_DEFINE(my_hs_cfg_desc, "HS Configuration");
 
-USBD_DEFINE_MSC_LUN(sd_lun, "SD", "Joost   ", "SD Card        ", "1.0");
+USBD_CONFIGURATION_DEFINE(my_fs_config, USB_SCD_SELF_POWERED, 200, &my_fs_cfg_desc);
+USBD_CONFIGURATION_DEFINE(my_hs_config, USB_SCD_SELF_POWERED, 200, &my_hs_cfg_desc);
+
+/* MSC LUN: vendor=8 chars, product=16 chars exactly */
+USBD_DEFINE_MSC_LUN(sd_lun, "SD", "Joost   ", "SD Card         ", "1.0");
 
 int main(void)
 {
@@ -69,16 +74,38 @@ int main(void)
     status = disk_access_status("SD");
     LOG_INF("Disk status in main: %d (0=OK, 1=UNINIT, 2=NOMEDIA)", status);
 
+    /* Add string descriptors */
     usbd_add_descriptor(&my_usbd, &my_lang);
     usbd_add_descriptor(&my_usbd, &my_mfr);
     usbd_add_descriptor(&my_usbd, &my_product);
     usbd_add_descriptor(&my_usbd, &my_sn);
 
-    usbd_add_configuration(&my_usbd, USBD_SPEED_FS, &my_fs_config);
-    usbd_add_configuration(&my_usbd, USBD_SPEED_HS, &my_hs_config);
+    /* Check for High-Speed capability and add HS config first if supported */
+    if (usbd_caps_speed(&my_usbd) == USBD_SPEED_HS) {
+        err = usbd_add_configuration(&my_usbd, USBD_SPEED_HS, &my_hs_config);
+        if (err) {
+            LOG_ERR("Failed to add HS configuration: %d", err);
+            return err;
+        }
+        err = usbd_register_all_classes(&my_usbd, USBD_SPEED_HS, 1, NULL);
+        if (err) {
+            LOG_ERR("Failed to register HS classes: %d", err);
+            return err;
+        }
+        LOG_INF("High-Speed configuration added");
+    }
 
-    usbd_register_all_classes(&my_usbd, USBD_SPEED_FS, 1, NULL);
-    usbd_register_all_classes(&my_usbd, USBD_SPEED_HS, 1, NULL);
+    /* Always add Full-Speed configuration */
+    err = usbd_add_configuration(&my_usbd, USBD_SPEED_FS, &my_fs_config);
+    if (err) {
+        LOG_ERR("Failed to add FS configuration: %d", err);
+        return err;
+    }
+    err = usbd_register_all_classes(&my_usbd, USBD_SPEED_FS, 1, NULL);
+    if (err) {
+        LOG_ERR("Failed to register FS classes: %d", err);
+        return err;
+    }
 
     err = usbd_init(&my_usbd);
     if (err) {
