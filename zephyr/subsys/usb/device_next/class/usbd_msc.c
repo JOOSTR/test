@@ -614,6 +614,11 @@ static void msc_handle_bulk_out(struct msc_bot_ctx *ctx,
 		/* Queue next buffer immediately - host sends data continuously */
 		if (ctx->state == MSC_BBB_PROCESS_WRITE) {
 			msc_queue_write(ctx);
+		} else if (ctx->state == MSC_BBB_SEND_CSW) {
+			/* Write complete - queue buffer for next CBW now,
+			 * before CSW is sent. Host may send next CBW immediately.
+			 */
+			msc_queue_cbw(ctx->class_node);
 		}
 	}
 }
