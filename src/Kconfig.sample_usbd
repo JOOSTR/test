@@ -19,7 +19,7 @@ config SAMPLE_USBD_PRODUCT
 	string "USB device sample product string"
 	default "USBD sample"
 	help
-	  USB device sample product stringa.
+	  USB device sample product string.
 
 config SAMPLE_USBD_VID
 	hex "USB device sample Vendor ID"

@@ -1,4 +1,4 @@
-c/* bounce_disk.c - Wrapper to handle IDMA buffer requirements */
+/* bounce_disk.c - Wrapper to handle IDMA buffer requirements */
 
 #include <zephyr/kernel.h>
 #include <zephyr/storage/disk_access.h>
