@@ -20,6 +20,8 @@
     pinctrl-names = "default";
     disk-name = "SD";
     bus-width = <4>;
+    idma;
+    clk-div = <16>;  /* 160MHz / (16+2) = 8.9MHz - conservative for debugging */
 };
 
 &usbotg_hs {
