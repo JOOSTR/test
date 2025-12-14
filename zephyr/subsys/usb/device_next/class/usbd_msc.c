@@ -611,15 +611,9 @@ static void msc_handle_bulk_out(struct msc_bot_ctx *ctx,
 		}
 	} else if (ctx->state == MSC_BBB_PROCESS_WRITE) {
 		msc_process_write(ctx, buf, len);
-		/* Queue next buffer immediately - host sends data continuously */
-		if (ctx->state == MSC_BBB_PROCESS_WRITE) {
-			msc_queue_write(ctx);
-		} else if (ctx->state == MSC_BBB_SEND_CSW) {
-			/* Write complete - queue buffer for next CBW now,
-			 * before CSW is sent. Host may send next CBW immediately.
-			 */
-			msc_queue_cbw(ctx->class_node);
-		}
+		/* Note: Don't queue buffers here - num_out_queued hasn't been
+		 * decremented yet. The worker thread will queue after buffer freed.
+		 */
 	}
 }
 
@@ -629,6 +623,10 @@ static void msc_handle_bulk_in(struct msc_bot_ctx *ctx,
 	if (ctx->state == MSC_BBB_WAIT_FOR_CSW_SENT) {
 		LOG_DBG("CSW sent");
 		ctx->state = MSC_BBB_EXPECT_CBW;
+		/* Queue CBW buffer immediately - host sends next command right
+		 * after CSW. Note: can't queue here either because num_in_queued
+		 * hasn't been decremented yet. Worker thread will handle it.
+		 */
 	} else if (ctx->state == MSC_BBB_PROCESS_READ) {
 		struct scsi_ctx *lun = &ctx->luns[ctx->cbw.bCBWLUN];
 
@@ -730,9 +728,9 @@ ep_request_error:
 			ctx->num_in_queued--;
 		}
 	}
-	msc_free_scsi_buf(ctx, buf->__buf);
+	msc_free_scsi_buf(ctx, buf->data);
 	if (buf->frags) {
-		msc_free_scsi_buf(ctx, buf->frags->__buf);
+		msc_free_scsi_buf(ctx, buf->frags->data);
 	}
 	usbd_ep_buf_free(uds_ctx, buf);
 
