@@ -293,40 +293,55 @@ extern uint8_t idma_bounce_buffer[4096];
 
 static int update_disk_info(struct scsi_ctx *const ctx)
 {
-	int status = disk_access_status(ctx->disk);
+	int status;
+
+	/* Initialize the disk if not already initialized */
+	status = disk_access_init(ctx->disk);
+	if (status != 0 && status != -EALREADY) {
+		LOG_ERR("disk_access_init failed: %d", status);
+		return -EIO;
+	}
+
+	status = disk_access_status(ctx->disk);
 	LOG_INF("disk_access_status returned: %d", status);
+
+	/* Check for explicit no-media status */
+	if (status == DISK_STATUS_NOMEDIA) {
+		return -ENOMEDIUM;
+	}
 
 	if (disk_access_ioctl(ctx->disk, DISK_IOCTL_GET_SECTOR_COUNT, &ctx->sector_count) != 0) {
 		LOG_ERR("GET_SECTOR_COUNT failed");
 		ctx->sector_count = 0;
-		status = -EIO;
+		return -EIO;
 	}
 
 	if (disk_access_ioctl(ctx->disk, DISK_IOCTL_GET_SECTOR_SIZE, &ctx->sector_size) != 0) {
 		LOG_ERR("GET_SECTOR_SIZE failed");
 		ctx->sector_size = 0;
-		status = -EIO;
+		return -EIO;
 	}
 
-	LOG_INF("sector_count=%u, sector_size=%u, buffer_size=%d", 
+	LOG_INF("sector_count=%u, sector_size=%u, buffer_size=%d",
 	        ctx->sector_count, ctx->sector_size, CONFIG_USBD_MSC_SCSI_BUFFER_SIZE);
 
 	if (!ctx->sector_size) {
 		LOG_ERR("sector_size is 0");
-		status = -EIO;
+		return -EIO;
 	} else if ((ctx->sector_size % USBD_MAX_BULK_MPS) &&
 		   (USBD_MAX_BULK_MPS % ctx->sector_size)) {
 		LOG_ERR("sector_size alignment issue");
-		status = -EIO;
+		return -EIO;
 	}
 
 	if (ctx->sector_size > CONFIG_USBD_MSC_SCSI_BUFFER_SIZE) {
 		LOG_ERR("sector_size > buffer_size!");
-		status = -ENOMEM;
+		return -ENOMEM;
 	}
 
-	LOG_INF("update_disk_info returning: %d", status);
-	return status;
+	/* All checks passed - disk is ready */
+	LOG_INF("update_disk_info returning: DISK_STATUS_OK");
+	return DISK_STATUS_OK;
 }
 
 static size_t good(struct scsi_ctx *ctx, size_t data_in_bytes)
