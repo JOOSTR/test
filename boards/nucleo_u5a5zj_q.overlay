@@ -25,3 +25,9 @@
 &usbotg_hs {
     status = "okay";
 };
+
+/* Configure SRAM1 (0x28000000) as a memory region for USB IDMA access */
+&sram1 {
+    compatible = "zephyr,memory-region", "mmio-sram";
+    zephyr,memory-region = "SRAM1";
+};
