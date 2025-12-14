@@ -1424,14 +1424,16 @@ static int uvc_add_vs_format_desc(const struct device *dev,
 
 	if (fourcc == VIDEO_PIX_FMT_JPEG) {
 		struct uvc_format_mjpeg_descriptor *desc;
+		union uvc_fmt_desc *fmt_desc;
 
 		LOG_INF("Adding format descriptor #%u for MJPEG",
 			cfg->desc->if1_hdr.bNumFormats + 1);
 
-		desc = &uvc_new_fmt_desc(dev)->fmt_mjpeg;
-		if (desc == NULL) {
+		fmt_desc = uvc_new_fmt_desc(dev);
+		if (fmt_desc == NULL) {
 			return -ENOMEM;
 		}
+		desc = &fmt_desc->fmt_mjpeg;
 
 		desc->bDescriptorType = USB_DESC_CS_INTERFACE;
 		desc->bFormatIndex = cfg->desc->if1_hdr.bNumFormats + 1;
@@ -1443,14 +1445,16 @@ static int uvc_add_vs_format_desc(const struct device *dev,
 		*format_desc = (struct uvc_format_descriptor *)desc;
 	} else if (fourcc == VIDEO_PIX_FMT_H264) {
 		struct uvc_format_frame_based_descriptor *desc;
+		union uvc_fmt_desc *fmt_desc;
 
 		LOG_INF("Adding format descriptor #%u for H264",
 			cfg->desc->if1_hdr.bNumFormats + 1);
 
-		desc = &uvc_new_fmt_desc(dev)->fmt_frame_based;
-		if (desc == NULL) {
+		fmt_desc = uvc_new_fmt_desc(dev);
+		if (fmt_desc == NULL) {
 			return -ENOMEM;
 		}
+		desc = &fmt_desc->fmt_frame_based;
 
 		desc->bDescriptorType = USB_DESC_CS_INTERFACE;
 		desc->bFormatIndex = cfg->desc->if1_hdr.bNumFormats + 1;
@@ -1464,14 +1468,16 @@ static int uvc_add_vs_format_desc(const struct device *dev,
 		*format_desc = (struct uvc_format_descriptor *)desc;
 	} else {
 		struct uvc_format_uncomp_descriptor *desc;
+		union uvc_fmt_desc *fmt_desc;
 
 		LOG_INF("Adding format descriptor #%u for '%s'",
 			cfg->desc->if1_hdr.bNumFormats + 1, VIDEO_FOURCC_TO_STR(fourcc));
 
-		desc = &uvc_new_fmt_desc(dev)->fmt_uncomp;
-		if (desc == NULL) {
+		fmt_desc = uvc_new_fmt_desc(dev);
+		if (fmt_desc == NULL) {
 			return -ENOMEM;
 		}
+		desc = &fmt_desc->fmt_uncomp;
 
 		desc->bDescriptorType = USB_DESC_CS_INTERFACE;
 		desc->bFormatIndex = cfg->desc->if1_hdr.bNumFormats + 1;
@@ -1498,7 +1504,8 @@ static int uvc_compare_frmival_desc(const void *const a, const void *const b)
 	memcpy(&ia, a, sizeof(uint32_t));
 	memcpy(&ib, b, sizeof(uint32_t));
 
-	return ia - ib;
+	/* Use comparison instead of subtraction to avoid integer overflow */
+	return (ia > ib) - (ia < ib);
 }
 
 static void uvc_set_vs_bitrate_range(struct uvc_frame_descriptor *const desc,
@@ -1575,6 +1582,7 @@ static int uvc_add_vs_frame_desc(const struct device *dev,
 	const struct uvc_config *cfg = dev->config;
 	struct uvc_data *data = dev->data;
 	struct uvc_frame_descriptor *desc;
+	union uvc_fmt_desc *fmt_desc;
 	struct video_frmival_enum fie = {.format = fmt};
 	int ret;
 
@@ -1584,10 +1592,11 @@ static int uvc_add_vs_frame_desc(const struct device *dev,
 	LOG_INF("Adding frame descriptor #%u for %ux%u",
 		format_desc->bNumFrameDescriptors + 1, fmt->width, fmt->height);
 
-	desc = &uvc_new_fmt_desc(dev)->frm;
-	if (desc == NULL) {
+	fmt_desc = uvc_new_fmt_desc(dev);
+	if (fmt_desc == NULL) {
 		return -ENOMEM;
 	}
+	desc = &fmt_desc->frm;
 
 	desc->bLength = sizeof(struct uvc_frame_discrete_descriptor) -
 		CONFIG_USBD_VIDEO_MAX_FRMIVAL * sizeof(uint32_t);
