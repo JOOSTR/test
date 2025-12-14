@@ -361,6 +361,7 @@ static int dfu_dnload_idle_next(struct usbd_class_data *const c_data,
 		data->next = DFU_IDLE;
 		/* Notify image backend about DFU_DNLOAD_IDLE -> DFU_IDLE change */
 		usbd_dfu_image_next(c_data, data->next);
+		__fallthrough;
 	case USB_DFU_REQ_GETSTATUS:
 		__fallthrough;
 	case USB_DFU_REQ_GETSTATE:
@@ -384,14 +385,13 @@ static int dfu_manifest_sync_next(struct usbd_class_data *const c_data,
 		} else {
 			data->next = DFU_MANIFEST;
 		}
+		__fallthrough;
 	case USB_DFU_REQ_GETSTATE:
 		return 0;
 	default:
 		dfu_error(c_data, DFU_ERROR, ERR_STALLEDPKT);
 		return -ENOTSUP;
 	}
-
-	return 0;
 }
 
 static int dfu_manifest_next(struct usbd_class_data *const c_data,
@@ -438,6 +438,7 @@ static int dfu_upload_idle_next(struct usbd_class_data *const c_data,
 		data->next = DFU_IDLE;
 		/* Notify image backend about DFU_UPLOAD_IDLE -> DFU_IDLE change */
 		usbd_dfu_image_next(c_data, data->next);
+		__fallthrough;
 	case USB_DFU_REQ_GETSTATUS:
 		__fallthrough;
 	case USB_DFU_REQ_GETSTATE:
