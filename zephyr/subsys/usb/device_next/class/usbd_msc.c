@@ -129,6 +129,24 @@ struct msc_bot_ctx {
 	size_t scsi_bytes;
 };
 
+/* Magic value to identify valid SCSI buffer index in user_data */
+#define MSC_SCSI_BUF_MAGIC 0x5C
+
+/* Store SCSI buffer index in net_buf user_data for reliable freeing */
+static inline void msc_buf_set_scsi_idx(struct net_buf *buf, int idx)
+{
+	buf->user_data[0] = MSC_SCSI_BUF_MAGIC;
+	buf->user_data[1] = (uint8_t)idx;
+}
+
+static inline int msc_buf_get_scsi_idx(struct net_buf *buf)
+{
+	if (buf->user_data[0] == MSC_SCSI_BUF_MAGIC) {
+		return buf->user_data[1];
+	}
+	return -1;
+}
+
 static struct net_buf *msc_buf_alloc_data(const uint8_t ep, uint8_t *data, size_t len)
 {
 	struct net_buf *buf = NULL;
@@ -150,6 +168,17 @@ static struct net_buf *msc_buf_alloc_data(const uint8_t ep, uint8_t *data, size_
 	return buf;
 }
 
+/* Get SCSI buffer index from pointer (for storing in net_buf user_data) */
+static int msc_get_scsi_buf_idx(struct msc_bot_ctx *ctx, uint8_t *buf)
+{
+	for (int i = 0; i < MSC_NUM_BUFFERS; i++) {
+		if (buf == ctx->scsi_bufs[i]) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 static uint8_t *msc_alloc_scsi_buf(struct msc_bot_ctx *ctx)
 {
 	for (int i = 0; i < MSC_NUM_BUFFERS; i++) {
@@ -164,25 +193,54 @@ static uint8_t *msc_alloc_scsi_buf(struct msc_bot_ctx *ctx)
 	return NULL;
 }
 
-void msc_free_scsi_buf(struct msc_bot_ctx *ctx, uint8_t *buf)
+/* Free SCSI buffer by index */
+static void msc_free_scsi_buf_idx(struct msc_bot_ctx *ctx, int idx)
 {
+	if (idx >= 0 && idx < MSC_NUM_BUFFERS) {
+		ctx->scsi_bufs_used &= ~BIT(idx);
+	}
+}
+
+/* Free SCSI buffer by raw pointer (used in error handling before enqueue) */
+static void msc_free_scsi_buf_ptr(struct msc_bot_ctx *ctx, uint8_t *ptr)
+{
+	int idx = msc_get_scsi_buf_idx(ctx, ptr);
+
+	msc_free_scsi_buf_idx(ctx, idx);
+}
+
+/* Free SCSI buffer associated with a net_buf using stored index */
+static void msc_free_scsi_buf(struct msc_bot_ctx *ctx, struct net_buf *buf)
+{
+	int idx;
+
 	if (buf == NULL) {
 		return;
 	}
 
-	for (int i = 0; i < MSC_NUM_BUFFERS; i++) {
-		uint8_t *scsi_buf = ctx->scsi_bufs[i];
+	/* Try to get index from user_data first (most reliable) */
+	idx = msc_buf_get_scsi_idx(buf);
+	if (idx >= 0) {
+		msc_free_scsi_buf_idx(ctx, idx);
+		return;
+	}
 
-		/* Check if buf points anywhere within this SCSI buffer.
-		 * The USB stack may modify buf->data to point within the
-		 * buffer rather than at its start.
-		 */
-		if (buf >= scsi_buf &&
-		    buf < scsi_buf + CONFIG_USBD_MSC_SCSI_BUFFER_SIZE) {
-			ctx->scsi_bufs_used &= ~BIT(i);
-			return;
+	/* Fallback: try to find buffer by checking if buf->data points
+	 * within any of our SCSI buffers
+	 */
+	if (buf->data != NULL) {
+		for (int i = 0; i < MSC_NUM_BUFFERS; i++) {
+			uint8_t *scsi_buf = ctx->scsi_bufs[i];
+
+			if (buf->data >= scsi_buf &&
+			    buf->data < scsi_buf + CONFIG_USBD_MSC_SCSI_BUFFER_SIZE) {
+				ctx->scsi_bufs_used &= ~BIT(i);
+				return;
+			}
 		}
 	}
+
+	LOG_WRN("Could not find SCSI buffer to free");
 }
 
 static size_t clamp_transfer_length(struct usbd_context *uds_ctx,
@@ -301,6 +359,7 @@ static void msc_queue_write(struct msc_bot_ctx *ctx)
 	uint8_t ep;
 	size_t len;
 	int ret;
+	int idx;
 
 	ep = msc_get_bulk_out(ctx->class_node);
 
@@ -315,11 +374,15 @@ static void msc_queue_write(struct msc_bot_ctx *ctx)
 		 */
 		__ASSERT_NO_MSG(buf);
 
+		/* Store SCSI buffer index for reliable freeing later */
+		idx = msc_get_scsi_buf_idx(ctx, scsi_buf);
+		msc_buf_set_scsi_idx(buf, idx);
+
 		ret = usbd_ep_enqueue(ctx->class_node, buf);
 		if (ret) {
 			LOG_ERR("Failed to enqueue net_buf for 0x%02x", ep);
 			net_buf_unref(buf);
-			msc_free_scsi_buf(ctx, scsi_buf);
+			msc_free_scsi_buf_ptr(ctx, scsi_buf);
 			/* 6.6.2 Internal Device Error */
 			msc_stall_and_wait_for_recovery(ctx);
 			return;
@@ -336,6 +399,7 @@ static void msc_queue_cbw(struct usbd_class_data *const c_data)
 	uint8_t *scsi_buf;
 	uint8_t ep;
 	int ret;
+	int idx;
 
 	if (ctx->num_out_queued) {
 		/* Already queued */
@@ -355,11 +419,15 @@ static void msc_queue_cbw(struct usbd_class_data *const c_data)
 	 */
 	__ASSERT_NO_MSG(buf);
 
+	/* Store SCSI buffer index for reliable freeing later */
+	idx = msc_get_scsi_buf_idx(ctx, scsi_buf);
+	msc_buf_set_scsi_idx(buf, idx);
+
 	ret = usbd_ep_enqueue(c_data, buf);
 	if (ret) {
 		LOG_ERR("Failed to enqueue net_buf for 0x%02x", ep);
 		net_buf_unref(buf);
-		msc_free_scsi_buf(ctx, scsi_buf);
+		msc_free_scsi_buf_ptr(ctx, scsi_buf);
 		/* 6.6.2 Internal Device Error */
 		msc_stall_and_wait_for_recovery(ctx);
 	} else {
@@ -407,6 +475,7 @@ static void msc_queue_bulk_in_ep(struct msc_bot_ctx *ctx, uint8_t *data, int len
 	struct net_buf *buf;
 	uint8_t ep;
 	int ret;
+	int idx;
 
 	ep = msc_get_bulk_in(ctx->class_node);
 	buf = msc_buf_alloc_data(ep, data, len);
@@ -415,12 +484,16 @@ static void msc_queue_bulk_in_ep(struct msc_bot_ctx *ctx, uint8_t *data, int len
 	 */
 	__ASSERT_NO_MSG(buf);
 
+	/* Store SCSI buffer index for reliable freeing later */
+	idx = msc_get_scsi_buf_idx(ctx, data);
+	msc_buf_set_scsi_idx(buf, idx);
+
 	/* Either the net buf is full or there is no more SCSI data */
 	ctx->csw.dCSWDataResidue -= len;
 	ret = usbd_ep_enqueue(ctx->class_node, buf);
 	if (ret) {
 		LOG_ERR("Failed to enqueue net_buf for 0x%02x", ep);
-		msc_free_scsi_buf(ctx, data);
+		msc_free_scsi_buf_ptr(ctx, data);
 		net_buf_unref(buf);
 		/* 6.6.2 Internal Device Error */
 		msc_stall_and_wait_for_recovery(ctx);
@@ -667,6 +740,7 @@ static void msc_send_csw(struct msc_bot_ctx *ctx)
 	uint8_t *scsi_buf;
 	uint8_t ep;
 	int ret;
+	int idx;
 
 	if (ctx->num_in_queued) {
 		__ASSERT_NO_MSG(false);
@@ -688,11 +762,15 @@ static void msc_send_csw(struct msc_bot_ctx *ctx)
 	 */
 	__ASSERT_NO_MSG(buf);
 
+	/* Store SCSI buffer index for reliable freeing later */
+	idx = msc_get_scsi_buf_idx(ctx, scsi_buf);
+	msc_buf_set_scsi_idx(buf, idx);
+
 	ret = usbd_ep_enqueue(ctx->class_node, buf);
 	if (ret) {
 		LOG_ERR("Failed to enqueue net_buf for 0x%02x", ep);
 		net_buf_unref(buf);
-		msc_free_scsi_buf(ctx, scsi_buf);
+		msc_free_scsi_buf_ptr(ctx, scsi_buf);
 		/* 6.6.2 Internal Device Error */
 		msc_stall_and_wait_for_recovery(ctx);
 	} else {
@@ -739,9 +817,9 @@ ep_request_error:
 			ctx->num_in_queued--;
 		}
 	}
-	msc_free_scsi_buf(ctx, buf->data);
+	msc_free_scsi_buf(ctx, buf);
 	if (buf->frags) {
-		msc_free_scsi_buf(ctx, buf->frags->data);
+		msc_free_scsi_buf(ctx, buf->frags);
 	}
 	usbd_ep_buf_free(uds_ctx, buf);
 
