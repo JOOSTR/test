@@ -166,8 +166,19 @@ static uint8_t *msc_alloc_scsi_buf(struct msc_bot_ctx *ctx)
 
 void msc_free_scsi_buf(struct msc_bot_ctx *ctx, uint8_t *buf)
 {
+	if (buf == NULL) {
+		return;
+	}
+
 	for (int i = 0; i < MSC_NUM_BUFFERS; i++) {
-		if (buf == ctx->scsi_bufs[i]) {
+		uint8_t *scsi_buf = ctx->scsi_bufs[i];
+
+		/* Check if buf points anywhere within this SCSI buffer.
+		 * The USB stack may modify buf->data to point within the
+		 * buffer rather than at its start.
+		 */
+		if (buf >= scsi_buf &&
+		    buf < scsi_buf + CONFIG_USBD_MSC_SCSI_BUFFER_SIZE) {
 			ctx->scsi_bufs_used &= ~BIT(i);
 			return;
 		}
