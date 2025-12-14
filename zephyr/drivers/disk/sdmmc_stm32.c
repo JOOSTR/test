@@ -148,23 +148,35 @@ static void stm32_sdmmc_isr(const struct device *dev)
 #endif
 }
 
-#define DEFINE_HAL_CALLBACK(name)                                              \
+/* Success callbacks - just signal completion */
+#define DEFINE_HAL_CPLT_CALLBACK(name)                                         \
     void name(SD_HandleTypeDef *hsd)                                           \
     {                                                                          \
         struct stm32_sdmmc_priv *priv =                                        \
             CONTAINER_OF(hsd, struct stm32_sdmmc_priv, hsd);                   \
-        /* priv->status = hsd->ErrorCode; */  /* <-- COMMENT THIS OUT */       \
+        k_sem_give(&priv->sync);                                               \
+    }
+
+/* Error callback - signal completion but preserve DISK_STATUS_OK */
+/* Note: We don't set priv->status here because HAL error codes (like 0x20)   */
+/* are not DISK_STATUS_* values. The HAL error is in hsd->ErrorCode if needed */
+#define DEFINE_HAL_ERROR_CALLBACK(name)                                        \
+    void name(SD_HandleTypeDef *hsd)                                           \
+    {                                                                          \
+        struct stm32_sdmmc_priv *priv =                                        \
+            CONTAINER_OF(hsd, struct stm32_sdmmc_priv, hsd);                   \
+        LOG_ERR("HAL SD error callback: ErrorCode=0x%08X", hsd->ErrorCode);    \
         k_sem_give(&priv->sync);                                               \
     }
 
 #ifdef CONFIG_SDMMC_STM32_EMMC
-DEFINE_HAL_CALLBACK(HAL_MMC_TxCpltCallback);
-DEFINE_HAL_CALLBACK(HAL_MMC_RxCpltCallback);
-DEFINE_HAL_CALLBACK(HAL_MMC_ErrorCallback);
+DEFINE_HAL_CPLT_CALLBACK(HAL_MMC_TxCpltCallback);
+DEFINE_HAL_CPLT_CALLBACK(HAL_MMC_RxCpltCallback);
+DEFINE_HAL_ERROR_CALLBACK(HAL_MMC_ErrorCallback);
 #else
-DEFINE_HAL_CALLBACK(HAL_SD_TxCpltCallback);
-DEFINE_HAL_CALLBACK(HAL_SD_RxCpltCallback);
-DEFINE_HAL_CALLBACK(HAL_SD_ErrorCallback);
+DEFINE_HAL_CPLT_CALLBACK(HAL_SD_TxCpltCallback);
+DEFINE_HAL_CPLT_CALLBACK(HAL_SD_RxCpltCallback);
+DEFINE_HAL_ERROR_CALLBACK(HAL_SD_ErrorCallback);
 #endif
 
 static int stm32_sdmmc_clock_enable(struct stm32_sdmmc_priv *priv)
@@ -552,6 +564,9 @@ static int stm32_sdmmc_access_read(struct disk_info *disk, uint8_t *data_buf,
 	k_sem_take(&priv->thread_lock, K_FOREVER);
 	pm_policy_state_lock_get(PM_STATE_SUSPEND_TO_IDLE, PM_ALL_SUBSTATES);
 
+	/* Clear any previous error before starting new operation */
+	priv->hsd.ErrorCode = 0;
+
 #if STM32_SDMMC_USE_DMA_SHARED
 	/* Initialise the shared DMA channel for the current direction */
 	priv->dma_txrx_handle.Init.Direction = LL_DMA_DIRECTION_PERIPH_TO_MEMORY;
@@ -594,8 +609,9 @@ static int stm32_sdmmc_access_read(struct disk_info *disk, uint8_t *data_buf,
 	}
 #endif
 
-	if (priv->status != DISK_STATUS_OK) {
-		LOG_ERR("sd read error %d", priv->status);
+	/* Check if HAL reported an error during the operation */
+	if (priv->hsd.ErrorCode != 0) {
+		LOG_ERR("sd read error 0x%08X", priv->hsd.ErrorCode);
 		err = -EIO;
 		goto end;
 	}
@@ -652,6 +668,9 @@ static int stm32_sdmmc_access_write(struct disk_info *disk,
 	k_sem_take(&priv->thread_lock, K_FOREVER);
 	pm_policy_state_lock_get(PM_STATE_SUSPEND_TO_IDLE, PM_ALL_SUBSTATES);
 
+	/* Clear any previous error before starting new operation */
+	priv->hsd.ErrorCode = 0;
+
 #if STM32_SDMMC_USE_DMA_SHARED
 	/* Initialise the shared DMA channel for the current direction */
 	priv->dma_txrx_handle.Init.Direction = LL_DMA_DIRECTION_MEMORY_TO_PERIPH;
@@ -680,8 +699,9 @@ static int stm32_sdmmc_access_write(struct disk_info *disk,
 	}
 #endif
 
-	if (priv->status != DISK_STATUS_OK) {
-		LOG_ERR("sd write error %d", priv->status);
+	/* Check if HAL reported an error during the operation */
+	if (priv->hsd.ErrorCode != 0) {
+		LOG_ERR("sd write error 0x%08X", priv->hsd.ErrorCode);
 		err = -EIO;
 		goto end;
 	}
